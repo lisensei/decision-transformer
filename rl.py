@@ -67,12 +67,60 @@ def sample_episode(agent, env, device):
             1, -1, state_dim)
         output = agent(x)
         a = torch.argmax(output[:, -1], dim=1).numpy()[0]
+        if a >= env.action_space.n:
+            a = env.action_space.sample()
         actions.append(a)
         state, r, done, _, _ = env.step(a)
         rewards.append(r)
         pic = env.render()
 
-    return torch.tensor(np.array(states), device=device), torch.tensor(np.array(actions), device=device), torch.tensor(rewards, device=device)
+    states = torch.tensor(np.array(states), device=device)
+    actions = torch.tensor(np.array(actions), device=device)
+    rewards = torch.tensor(rewards, device=device)
+    print(states.shape, actions.shape, rewards.shape)
+
+    return states, actions, rewards
+
+
+def collate(batch):
+    state_list = []
+    action_list = []
+    reward_list = []
+    max_len = -1
+    for _, actions, _ in batch:
+        episode_length = len(actions)
+        max_len = episode_length if max_len < episode_length else max_len
+    for states, actions, rewards in batch:
+        state_length = len(states)
+        if state_length < max_len:
+            diff = max_len-state_length
+            state_pad_value = torch.zeros(
+                size=(diff, states.size(1)))
+            states = torch.cat([states, state_pad_value])
+            action_pad_value = torch.ones(size=(diff,))*2
+            actions = torch.cat([actions, action_pad_value])
+            reward_pad_value = torch.zeros(size=(diff,))
+            rewards = torch.cat([rewards, reward_pad_value])
+        state_list.append(states)
+        action_list.append(actions)
+        reward_list.append(rewards)
+    return torch.stack(state_list), torch.stack(action_list), torch.stack(reward_list)
+
+
+def test_padding(model, env, device):
+    s1 = sample_episode(model, env, device)
+    s2 = sample_episode(model, env, device)
+    states, actions, rewards = collate((s1, s2))
+    model(states)
+    print("state============")
+    print(states[0])
+    print(states[1])
+    print("\naction=======")
+    print(actions[0])
+    print(actions[1])
+    print("\nreward=======")
+    print(rewards[0])
+    print(rewards[1])
 
 
 cartpole = gym.envs.make("CartPole-v1", render_mode="human")
@@ -82,7 +130,3 @@ num_parameters = sum([p.numel() for p in model.parameters()])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"number of parameters: {num_parameters}")
-
-x = torch.randn(size=(2, 256, 4))
-out = model(x)
-print(out.shape)
