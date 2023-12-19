@@ -7,7 +7,7 @@ from collections import deque
 
 
 class Agent(nn.Module):
-    def __init__(self, state_dim, num_actions, num_layers=2, max_len=100, interpolate_scale=16, num_heads=4, dim_forward=512, memory_length=100, batch_first=True) -> None:
+    def __init__(self, state_dim, num_actions, num_layers=2, max_len=100, interpolate_scale=4, num_heads=4, dim_forward=512, memory_length=100, batch_first=True) -> None:
         super().__init__()
         self.storage_capacity = deque(maxlen=max_len)
         self.num_heads = num_heads
@@ -68,6 +68,8 @@ class Agent(nn.Module):
             out = self.forward(torch.tensor(np.array(states), device=device).reshape(
                 1, -1, env.observation_space.shape[0]))
             action = torch.argmax(out, dim=2)[0, -1].numpy()
+            if action >= env.action_space.n:
+                action = env.action_space.sample()
             state, r, done, _, truncated = env.step(action)
             states.append(state)
             env.render()
@@ -118,6 +120,7 @@ def sample_episode(agent, env, device, save_to_agent_memory=True):
 
 
 def generate_memeory(agent, env, device, num_episodes, save=True):
+    agent.storage_capacity.clear()
     for i in range(num_episodes):
         sample_episode(agent, env, device, save)
 
@@ -147,7 +150,7 @@ def collate(batch):
         if state_length < max_len:
             diff = max_len-state_length
             state_pad_value = torch.empty(
-                size=(diff, states.size(1))).fill_("-inf")
+                size=(diff, states.size(1))).fill_(0)
             states = torch.cat([states, state_pad_value])
             action_pad_value = torch.ones(size=(diff,))*2
             actions = torch.cat([actions, action_pad_value])
@@ -180,29 +183,30 @@ def test_padding(model, env, device):
 cartpole = gym.envs.make("CartPole-v1", render_mode="rgb_array")
 demo_env = gym.envs.make("CartPole-v1", render_mode="human")
 num_samples = 100
-model = Agent(4, 2, max_len=num_samples)
+agent_memory_length = 500
+model = Agent(state_dim=4, num_actions=2, num_layers=4,
+              memory_length=agent_memory_length)
 num_parameters = sum([p.numel() for p in model.parameters()])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"number of parameters: {num_parameters}")
-
 epochs = 20
 batch_size = 16
-overfit = 10
+overfit = 5
 loss_function = nn.CrossEntropyLoss(ignore_index=2, reduction="none")
 optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4)
 
 for e in range(epochs):
     generate_memeory(model, cartpole, device, num_samples)
     dataset = CartpoleDataset(model.storage_capacity)
-    dataloader = DataLoader(dataset, batch_size=1,
+    dataloader = DataLoader(dataset, batch_size=batch_size,
                             shuffle=True, collate_fn=collate)
     model.train()
     for o in range(overfit):
         for i, (states, actions, rewards, returns) in enumerate(dataloader):
             out = model(states)
             loss = loss_function(out.permute(0, 2, 1), actions.to(torch.int64))
-            loss = torch.sum(loss*returns)
+            loss = -torch.sum(loss*returns)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
