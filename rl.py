@@ -19,7 +19,7 @@ class Agent(nn.Module):
             self.encoder_dim, num_heads, dim_forward, batch_first=batch_first)
         self.backbone = nn.TransformerEncoder(self.custom_encoder, num_layers)
         self.fc = nn.Linear(self.encoder_dim, num_actions+1)
-
+    '''
     def forward(self, source):
         if source.dim() != 3:
             raise RuntimeError(f"expected x has 3 dims but got {source.dim()}")
@@ -54,6 +54,25 @@ class Agent(nn.Module):
             output.append(x)
         output = torch.cat(output, dim=1)
         return output
+    '''
+    def forward(self, source):
+        if source.dim() != 3:
+            raise RuntimeError(f"expected x has 3 dims but got {source.dim()}")
+        b, segment_length = source.size(0), source.size(1)
+        x = source.reshape(b*segment_length, -1)
+        x = self.interpolation(x).reshape(b, segment_length, -1)
+        x = torch.relu(x)
+        pe = self.position_embedding(
+            torch.arange(segment_length)).unsqueeze(0).expand(b, -1, -1)
+        final_embeddding = pe+x
+        mask = nn.Transformer.generate_square_subsequent_mask(
+            segment_length)
+        mask = mask.unsqueeze(0).expand(b*self.num_heads, -1, -1)
+        key_pad_mask = torch.sum(source, dim=2) == 0
+        x = self.backbone.forward(
+            final_embeddding, mask=mask, src_key_padding_mask=key_pad_mask)
+        x = self.fc(x)
+        return x
 
     @torch.no_grad()
     def run(self, env, device):
@@ -182,10 +201,10 @@ def test_padding(model, env, device):
 
 cartpole = gym.envs.make("CartPole-v1", render_mode="rgb_array")
 demo_env = gym.envs.make("CartPole-v1", render_mode="human")
-num_samples = 100
+num_samples = 160
 agent_memory_length = 500
 model = Agent(state_dim=4, num_actions=2, num_layers=4,
-              memory_length=agent_memory_length)
+              memory_length=agent_memory_length,interpolate_scale=4,max_len=num_samples)
 num_parameters = sum([p.numel() for p in model.parameters()])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -204,9 +223,10 @@ for e in range(epochs):
     model.train()
     for o in range(overfit):
         for i, (states, actions, rewards, returns) in enumerate(dataloader):
+            factor=torch.sum(rewards,dim=1).unsqueeze(1).expand(-1,states.size(1))
             out = model(states)
             loss = loss_function(out.permute(0, 2, 1), actions.to(torch.int64))
-            loss = -torch.sum(loss*returns)
+            loss = -torch.sum(loss*factor)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
