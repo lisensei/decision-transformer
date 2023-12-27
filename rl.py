@@ -7,7 +7,7 @@ from collections import deque
 
 
 class Agent(nn.Module):
-    def __init__(self, state_dim, num_actions, num_layers=2, max_len=100, interpolate_scale=4, num_heads=4, dim_forward=512, memory_length=100, batch_first=True) -> None:
+    def __init__(self, state_dim, num_actions, num_layers=2, max_len=100, interpolate_scale=4, num_heads=4, dim_forward=64, memory_length=100, batch_first=True) -> None:
         super().__init__()
         self.storage_capacity = deque(maxlen=max_len)
         self.num_heads = num_heads
@@ -18,7 +18,7 @@ class Agent(nn.Module):
         self.custom_encoder = nn.TransformerEncoderLayer(
             self.encoder_dim, num_heads, dim_forward, batch_first=batch_first)
         self.backbone = nn.TransformerEncoder(self.custom_encoder, num_layers)
-        self.fc = nn.Linear(self.encoder_dim, num_actions+1)
+        self.fc = nn.Linear(self.encoder_dim, num_actions)
     '''
     def forward(self, source):
         if source.dim() != 3:
@@ -55,6 +55,7 @@ class Agent(nn.Module):
         output = torch.cat(output, dim=1)
         return output
     '''
+
     def forward(self, source):
         if source.dim() != 3:
             raise RuntimeError(f"expected x has 3 dims but got {source.dim()}")
@@ -75,7 +76,7 @@ class Agent(nn.Module):
         return x
 
     @torch.no_grad()
-    def run(self, env, device):
+    def run(self, env, device,greedy=True):
         self.eval()
         state, _ = env.reset()
         done = False
@@ -86,10 +87,13 @@ class Agent(nn.Module):
 
             out = self.forward(torch.tensor(np.array(states), device=device).reshape(
                 1, -1, env.observation_space.shape[0]))
-            action = torch.argmax(out, dim=2)[0, -1].numpy()
+            if greedy:
+                action = torch.argmax(out[0,-1])
+            else:
+                action=torch.multinomial(torch.softmax(out[0,-1],dim=0),1)
             if action >= env.action_space.n:
                 action = env.action_space.sample()
-            state, r, done, _, truncated = env.step(action)
+            state, r, done, _, truncated = env.step(action.item())
             states.append(state)
             env.render()
             total_returns += r
@@ -109,7 +113,7 @@ class CartpoleDataset(Dataset):
 
 
 @torch.no_grad()
-def sample_episode(agent, env, device, save_to_agent_memory=True):
+def sample_episode(agent, env, device, save_to_agent_memory=True,greedy=False):
     agent.eval()
     state_dim = env.observation_space.shape[0]
     states = []
@@ -123,7 +127,10 @@ def sample_episode(agent, env, device, save_to_agent_memory=True):
         x = torch.tensor(np.array(states), device=device).reshape(
             1, -1, state_dim)
         output = agent(x)
-        a = torch.argmax(output[:, -1], dim=1).numpy()[0]
+        if greedy:
+            a=torch.argmax(output[0,-1]).item()
+        else:
+            a=torch.multinomial(torch.softmax(output[0,-1],dim=0),1).item()
         if a >= env.action_space.n:
             a = env.action_space.sample()
         actions.append(a)
@@ -135,13 +142,16 @@ def sample_episode(agent, env, device, save_to_agent_memory=True):
     rewards = torch.tensor(rewards, device=device)
     if save_to_agent_memory:
         agent.storage_capacity.append((states, actions, rewards))
-    return states, actions, rewards
+    return states, actions, rewards, sum(rewards)
 
 
 def generate_memeory(agent, env, device, num_episodes, save=True):
     agent.storage_capacity.clear()
+    rewards = []
     for i in range(num_episodes):
-        sample_episode(agent, env, device, save)
+        _, _, _, r = sample_episode(agent, env, device, save)
+        rewards.append(r)
+    return sum(rewards)/len(rewards)
 
 
 def compute_total_return(returns, gamma=1):
@@ -201,34 +211,38 @@ def test_padding(model, env, device):
 
 cartpole = gym.envs.make("CartPole-v1", render_mode="rgb_array")
 demo_env = gym.envs.make("CartPole-v1", render_mode="human")
-num_samples = 160
+num_samples = 320
 agent_memory_length = 500
-model = Agent(state_dim=4, num_actions=2, num_layers=4,
-              memory_length=agent_memory_length,interpolate_scale=4,max_len=num_samples)
+model = Agent(state_dim=4, num_actions=2, num_layers=2,
+              memory_length=agent_memory_length, interpolate_scale=4, dim_forward=32,max_len=num_samples)
 num_parameters = sum([p.numel() for p in model.parameters()])
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"number of parameters: {num_parameters}")
 epochs = 20
-batch_size = 16
-overfit = 5
+batch_size = 1
 loss_function = nn.CrossEntropyLoss(ignore_index=2, reduction="none")
-optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
 
 for e in range(epochs):
-    generate_memeory(model, cartpole, device, num_samples)
+    baseline=generate_memeory(model, cartpole, device, num_samples)
     dataset = CartpoleDataset(model.storage_capacity)
     dataloader = DataLoader(dataset, batch_size=batch_size,
                             shuffle=True, collate_fn=collate)
     model.train()
-    for o in range(overfit):
-        for i, (states, actions, rewards, returns) in enumerate(dataloader):
-            factor=torch.sum(rewards,dim=1).unsqueeze(1).expand(-1,states.size(1))
-            out = model(states)
-            loss = loss_function(out.permute(0, 2, 1), actions.to(torch.int64))
-            loss = -torch.sum(loss*factor)
+    losses=0
+    for i, (states, actions, rewards, returns) in enumerate(dataloader):
+        factor = torch.sum(rewards, dim=1).unsqueeze(
+            1).expand(-1, states.size(1))-baseline
+        
+        out = model(states)
+        loss = loss_function(out.permute(0, 2, 1), actions.to(torch.int64))
+        losses += torch.sum(loss*factor)
+        if (i%64==0 or i==num_samples-1) and i!=0:
             optimizer.zero_grad()
-            loss.backward()
+            losses=-losses
+            losses.backward()
             optimizer.step()
+            losses=0
     tr = model.run(demo_env, device)
-    print(f"total return: {tr}")
+    print(f"previous baseline: {baseline};  total return: {tr}")
