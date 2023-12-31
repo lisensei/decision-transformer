@@ -117,7 +117,7 @@ def linear_collate(batch):
         step_returns = compute_total_return(rewards)
         states = torch.cat([states])
         actions = torch.cat([actions])
-        rewards = torch.cat([rewards])
+        rewards = torch.sum(rewards).expand(states.size(0))
         step_returns = torch.cat([step_returns])
         state_list.append(states)
         action_list.append(actions)
@@ -140,3 +140,9 @@ def test_padding(model, env, device):
     print("\nreward=======")
     print(rewards[0])
     print(rewards[1])
+
+
+if __name__ == "__main__":
+    import os
+    path="C:/Users/sensei/AppData/Local/Programs/Python/Python39/python.exe"
+    os.execl(path,"-m","rl.py")
