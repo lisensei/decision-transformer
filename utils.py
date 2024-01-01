@@ -17,7 +17,7 @@ class CartpoleDataset(Dataset):
 
 
 @torch.no_grad()
-def sample_episode(agent, env, device, save_to_agent_memory=True, greedy=False, linear=True):
+def sample_episode(agent, env, device, save_to_agent_memory=True, eps=0.1, greedy=False, linear=True):
     agent.eval()
     state_dim = env.observation_space.shape[0]
     states = []
@@ -42,15 +42,21 @@ def sample_episode(agent, env, device, save_to_agent_memory=True, greedy=False, 
                 a = torch.argmax(output[0, -1]).item()
         else:
             if linear:
-                a = torch.multinomial(torch.softmax(output, 1), 1).item()
+                probs = torch.softmax(output, 1)
             else:
-                a = torch.multinomial(torch.softmax(
-                    output[0, -1], dim=0), 1).item()
+                probs = torch.softmax(
+                    output[0, -1], dim=0)
+            if torch.isnan(probs).sum() >= 1:
+                a = env.action_space.sample()
+            else:
+                a = torch.multinomial(probs, 1).item()
         if a >= env.action_space.n:
             a = env.action_space.sample()
         actions.append(a)
         state, r, done, _, truncated = env.step(a)
         rewards.append(r)
+        if sum(rewards) > 500:
+            break
 
     states = torch.tensor(np.array(states), device=device)
     actions = torch.tensor(np.array(actions), device=device)
@@ -60,11 +66,11 @@ def sample_episode(agent, env, device, save_to_agent_memory=True, greedy=False, 
     return states, actions, rewards, sum(rewards)
 
 
-def generate_memeory(agent, env, device, num_episodes, save=True):
+def generate_memeory(agent, env, device, num_episodes, save=True, eps=0.1):
     agent.storage_capacity.clear()
     rewards = []
     for i in range(num_episodes):
-        _, _, _, r = sample_episode(agent, env, device, save)
+        _, _, _, r = sample_episode(agent, env, device, save, eps)
         rewards.append(r)
     return sum(rewards)/len(rewards)
 
@@ -73,7 +79,8 @@ def compute_total_return(returns, gamma=1):
     episodo_length = len(returns)
     step_returns = []
     for i in range(episodo_length):
-        powers = torch.pow(gamma, torch.arange(episodo_length-i).reshape(-1))
+        powers = torch.pow(gamma, torch.arange(
+            episodo_length-i, device=returns.device).reshape(-1))
         step_return = sum(returns[i:]*powers)
         step_returns.append(step_return)
     return torch.stack(step_returns)
@@ -144,5 +151,5 @@ def test_padding(model, env, device):
 
 if __name__ == "__main__":
     import os
-    path="C:/Users/sensei/AppData/Local/Programs/Python/Python39/python.exe"
-    os.execl(path,"-m","rl.py")
+    path = "C:/Users/sensei/AppData/Local/Programs/Python/Python39/python.exe"
+    os.execl(path, "-m", "rl.py")

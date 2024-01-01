@@ -95,6 +95,8 @@ class Agent(nn.Module):
             states.append(state)
             env.render()
             total_returns += r
+            if total_returns>500:
+                break
         return total_returns
 
 
@@ -142,6 +144,8 @@ class Net(nn.Module):
             state, r, done, _, truncated = env.step(action.item())
             env.render()
             total_returns += r
+            if total_returns>500:
+                break
         return total_returns
 
 
