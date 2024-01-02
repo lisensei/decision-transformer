@@ -86,16 +86,17 @@ class Agent(nn.Module):
             out = self.forward(torch.tensor(np.array(states), device=device).reshape(
                 1, -1, env.observation_space.shape[0]))
             if greedy:
-                action = torch.argmax(out[0, -1])
+                action = torch.argmax(out[0, -1]).item()
             else:
-                action = torch.multinomial(torch.softmax(out[0, -1], dim=0), 1)
+                action = torch.multinomial(
+                    torch.softmax(out[0, -1], dim=0), 1).item()
             if action >= env.action_space.n:
                 action = env.action_space.sample()
-            state, r, done, _, truncated = env.step(action.item())
+            state, r, done, _, truncated = env.step(action)
             states.append(state)
             env.render()
             total_returns += r
-            if total_returns>500:
+            if total_returns > 500:
                 break
         return total_returns
 
@@ -144,7 +145,7 @@ class Net(nn.Module):
             state, r, done, _, truncated = env.step(action.item())
             env.render()
             total_returns += r
-            if total_returns>500:
+            if total_returns > 500:
                 break
         return total_returns
 

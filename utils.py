@@ -17,7 +17,7 @@ class CartpoleDataset(Dataset):
 
 
 @torch.no_grad()
-def sample_episode(agent, env, device, save_to_agent_memory=True, eps=0.1, greedy=False, linear=True):
+def sample_episode(agent, env, device, sequence_model=True, eps=0.1, greedy=False, save_to_agent_memory=True,):
     agent.eval()
     state_dim = env.observation_space.shape[0]
     states = []
@@ -28,7 +28,7 @@ def sample_episode(agent, env, device, save_to_agent_memory=True, eps=0.1, greed
     truncated = False
     while not done and not truncated:
         states.append(state)
-        if linear:
+        if not sequence_model:
             x = torch.tensor(np.array(states[-1]), device=device).reshape(
                 1, state_dim)
         else:
@@ -36,12 +36,12 @@ def sample_episode(agent, env, device, save_to_agent_memory=True, eps=0.1, greed
                 1, -1, state_dim)
         output = agent(x)
         if greedy:
-            if linear:
+            if not sequence_model:
                 a = torch.argmax(output, 1).item()
             else:
                 a = torch.argmax(output[0, -1]).item()
         else:
-            if linear:
+            if not sequence_model:
                 probs = torch.softmax(output, 1)
             else:
                 probs = torch.softmax(
@@ -66,11 +66,12 @@ def sample_episode(agent, env, device, save_to_agent_memory=True, eps=0.1, greed
     return states, actions, rewards, sum(rewards)
 
 
-def generate_memeory(agent, env, device, num_episodes, save=True, eps=0.1):
+def generate_memeory(agent, env, device, num_episodes, sequence_model=True, save=True, eps=0.1):
     agent.storage_capacity.clear()
     rewards = []
     for i in range(num_episodes):
-        _, _, _, r = sample_episode(agent, env, device, save, eps)
+        _, _, _, r = sample_episode(
+            agent, env, device, sequence_model=sequence_model, eps=eps, save_to_agent_memory=save)
         rewards.append(r)
     return sum(rewards)/len(rewards)
 
