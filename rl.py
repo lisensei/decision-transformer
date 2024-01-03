@@ -12,12 +12,12 @@ parser.add_argument("-train_render_mode", type=str, default="rgb_array")
 parser.add_argument("-demo_render_mode", type=str, default="rgb_array")
 parser.add_argument("-eps", type=float, default=0.1)
 parser.add_argument("-clip_ratio", type=float, default=0.1)
-parser.add_argument("-naive_pg", type=int, default=1)
+parser.add_argument("-naive_pg", type=int, default=0)
 parser.add_argument("-epochs", type=int, default=100)
 parser.add_argument("-batch_size", type=int, default=64)
 parser.add_argument("-learning_rate", type=float, default=1e-3)
 parser.add_argument("-num_samples", type=int, default=200)
-parser.add_argument("-sequence_model", type=int, default=1)
+parser.add_argument("-sequence_model", type=int, default=0)
 parser.add_argument("-lr_step", type=int, default=20)
 parser.add_argument("-lr_decay_rate", type=float, default=0.5)
 args = parser.parse_args()
@@ -69,7 +69,7 @@ for e in tqdm(range(args.epochs)):
     model.train()
     k = 1 if args.naive_pg else 10
     for u in range(k):
-        for i, (states, actions, rewards, returns) in enumerate(dataloader):
+        for i, batch in enumerate(dataloader):
             '''
             Shapes:
             States: [B,S,D] for transformer, [B,D] for Linear
@@ -77,40 +77,8 @@ for e in tqdm(range(args.epochs)):
             rewards:[B,S]
             returns:[B,S]
             '''
-            states = states.to(device)
-            actions = actions.to(device).to(torch.int64)
-            rewards = rewards.to(device)
-            returns = returns.to(device)
-            out = model(states)
-            if args.sequence_model:
-                out = torch.flatten(out, start_dim=1)
-                index = actions
-            else:
-                index = actions.unsqueeze(1)
-            out = torch.softmax(out, dim=1)
-            with torch.no_grad():
-                prime = actor(states)
-                if args.sequence_model:
-                    prime = torch.flatten(prime, start_dim=1)
-
-                prime = torch.softmax(prime, 1)
-                prime = torch.gather(
-                    prime, 1, index)
-            target = torch.gather(out, 1, index)
-            ratio = target/prime
-            # print(f"out: {prime.shape} \ntarget: {target.shape} \nratio:{ratio.shape}\nreturns{returns.shape} nonzero:{returns[returns!=0].numel()}")
-            advantage = returns - baseline
-            advantage = torch.min(
-                ratio*advantage, torch.clip(ratio, 1-args.clip_ratio, 1+args.clip_ratio)*advantage)
-            if args.sequence_model:
-                advantage = advantage[returns != 0]
-            loss = -torch.mean(advantage)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            if args.naive_pg:
-                actor.load_state_dict(model.state_dict())
-                actor.eval()
+            train_linear(model, actor, batch, optimizer,
+                         device, args.naive_pg, baseline, args.clip_ratio)
     lr_scheduler.step()
     tr = model.run(demo_env, device)
     logger.info(

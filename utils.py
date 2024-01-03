@@ -16,6 +16,34 @@ class CartpoleDataset(Dataset):
         return len(self.episodes)
 
 
+def train_linear(model, actor, batch, optimizer, device, naive_pg, baseline, clip_ratio):
+    states, actions, rewards, returns = batch
+    states = states.to(device)
+    actions = actions.to(device).to(torch.int64)
+    rewards = rewards.to(device)
+    returns = returns.to(device)
+    out = model(states)
+    index = actions.unsqueeze(1)
+    out = torch.softmax(out, dim=1)
+    with torch.no_grad():
+        prime = actor(states)
+        prime = torch.softmax(prime, 1)
+        prime = torch.gather(
+            prime, 1, index)
+    target = torch.gather(out, 1, index)
+    ratio = target/prime
+    advantage = returns - baseline
+    advantage = torch.min(
+        ratio*advantage, torch.clip(ratio, 1-clip_ratio, 1+clip_ratio)*advantage)
+    loss = -torch.mean(advantage)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    if naive_pg:
+        actor.load_state_dict(model.state_dict())
+        actor.eval()
+
+
 @torch.no_grad()
 def sample_episode(agent, env, device, sequence_model=True, eps=0.1, greedy=False, save_to_agent_memory=True,):
     agent.eval()
