@@ -1,9 +1,10 @@
 import gym
+import logging
+import os
+import sys
 from model import Agent, Net
 from utils import *
 from argparse import ArgumentParser
-import logging
-import os
 from datetime import datetime
 from tqdm import tqdm
 parser = ArgumentParser()
@@ -22,6 +23,8 @@ parser.add_argument("-lr_decay_rate", type=float, default=0.5)
 args = parser.parse_args()
 
 run_time = datetime.now().isoformat(timespec="seconds")
+run_time = run_time.replace(
+    ":", "-") if sys.platform[:3] == "win" else run_time
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
 log_root = f"./runs-{run_time}"
