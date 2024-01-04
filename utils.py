@@ -17,6 +17,8 @@ class CartpoleDataset(Dataset):
 
 
 def train_linear(model, actor, batch, optimizer, device, naive_pg, baseline, clip_ratio):
+    model.train()
+    actor.eval()
     states, actions, rewards, returns = batch
     states = states.to(device)
     actions = actions.to(device).to(torch.int64)
@@ -32,6 +34,40 @@ def train_linear(model, actor, batch, optimizer, device, naive_pg, baseline, cli
             prime, 1, index)
     target = torch.gather(out, 1, index)
     ratio = target/prime
+    advantage = returns - baseline
+    advantage = torch.min(
+        ratio*advantage, torch.clip(ratio, 1-clip_ratio, 1+clip_ratio)*advantage)
+    loss = -torch.mean(advantage)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    if naive_pg:
+        actor.load_state_dict(model.state_dict())
+        actor.eval()
+
+
+def train_sequantial(model, actor, batch, optimizer, device, naive_pg, baseline, clip_ratio):
+    model.train()
+    actor.eval()
+    states, actions, rewards, returns = batch
+    states = states.to(device)
+    actions = actions.to(device).to(torch.int64)
+    rewards = rewards.to(device)
+    returns = returns.to(device)
+    out = model(states)
+    mask = actions != -1
+    index = actions[mask].unsqueeze(1)
+    returns = returns[mask]
+    out = out[mask]
+    out = torch.softmax(out, dim=1)
+    with torch.no_grad():
+        prime = actor(states)[mask]
+        prime = torch.softmax(prime, 1)
+        prime = torch.gather(
+            prime, 1, index)
+    target = torch.gather(out, 1, index)
+    ratio = (target/prime).squeeze(1)
+    assert not ratio.dim == 1, Exception(f"dim error")
     advantage = returns - baseline
     advantage = torch.min(
         ratio*advantage, torch.clip(ratio, 1-clip_ratio, 1+clip_ratio)*advantage)
@@ -78,8 +114,6 @@ def sample_episode(agent, env, device, sequence_model=True, eps=0.1, greedy=Fals
                 a = env.action_space.sample()
             else:
                 a = torch.multinomial(probs, 1).item()
-        if a >= env.action_space.n:
-            a = env.action_space.sample()
         actions.append(a)
         state, r, done, _, truncated = env.step(a)
         rewards.append(r)
@@ -132,7 +166,7 @@ def collate(batch):
             state_pad_value = torch.empty(
                 size=(diff, states.size(1))).fill_(0)
             states = torch.cat([states, state_pad_value])
-            action_pad_value = torch.ones(size=(diff,))*2
+            action_pad_value = torch.ones(size=(diff,))*-1
             actions = torch.cat([actions, action_pad_value])
             reward_pad_value = torch.zeros(size=(diff,))
             rewards = torch.cat([rewards, reward_pad_value])

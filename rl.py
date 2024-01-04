@@ -14,10 +14,10 @@ parser.add_argument("-eps", type=float, default=0.1)
 parser.add_argument("-clip_ratio", type=float, default=0.1)
 parser.add_argument("-naive_pg", type=int, default=0)
 parser.add_argument("-epochs", type=int, default=100)
-parser.add_argument("-batch_size", type=int, default=64)
+parser.add_argument("-batch_size", type=int, default=16)
 parser.add_argument("-learning_rate", type=float, default=1e-3)
 parser.add_argument("-num_samples", type=int, default=200)
-parser.add_argument("-sequence_model", type=int, default=0)
+parser.add_argument("-sequence_model", type=int, default=1)
 parser.add_argument("-lr_step", type=int, default=20)
 parser.add_argument("-lr_decay_rate", type=float, default=0.5)
 args = parser.parse_args()
@@ -38,9 +38,9 @@ demo_env = gym.envs.make("CartPole-v1", render_mode=args.demo_render_mode)
 
 agent_memory_length = 500
 if args.sequence_model:
-    model = Agent(state_dim=4, num_actions=3, num_layers=2,
+    model = Agent(state_dim=4, num_actions=2, num_layers=2,
                   memory_length=agent_memory_length, interpolate_scale=4, dim_forward=32, max_len=args.num_samples)
-    actor = Agent(state_dim=4, num_actions=3, num_layers=2,
+    actor = Agent(state_dim=4, num_actions=2, num_layers=2,
                   memory_length=agent_memory_length, interpolate_scale=4, dim_forward=32, max_len=args.num_samples)
 else:
     model = Net(4, 2, max_len=args.num_samples)
@@ -66,7 +66,6 @@ for e in tqdm(range(args.epochs)):
     dataset = CartpoleDataset(actor.storage_capacity)
     dataloader = DataLoader(dataset, batch_size=args.batch_size,
                             shuffle=True, collate_fn=collate if args.sequence_model else linear_collate)
-    model.train()
     k = 1 if args.naive_pg else 10
     for u in range(k):
         for i, batch in enumerate(dataloader):
@@ -77,8 +76,12 @@ for e in tqdm(range(args.epochs)):
             rewards:[B,S]
             returns:[B,S]
             '''
-            train_linear(model, actor, batch, optimizer,
-                         device, args.naive_pg, baseline, args.clip_ratio)
+            if args.sequence_model:
+                train_sequantial(model, actor, batch, optimizer,
+                                 device, args.naive_pg, baseline, args.clip_ratio)
+            else:
+                train_linear(model, actor, batch, optimizer,
+                             device, args.naive_pg, baseline, args.clip_ratio)
     lr_scheduler.step()
     tr = model.run(demo_env, device)
     logger.info(
