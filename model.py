@@ -117,6 +117,29 @@ class Net(nn.Module):
         return total_returns
 
 
+class CNN(nn.Module):
+    def __init__(self, maxlen) -> None:
+        self.storage_capacity = deque(maxlen=maxlen)
+        super().__init__()
+        self.con1 = nn.Conv2d(3, 32, 7, 4)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.con2 = nn.Conv2d(32, 32, 5, 3)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.con3 = nn.Conv2d(32, 64, 3, 2)
+        self.bn3 = nn.BatchNorm2d(64)
+        self.con4 = nn.Conv2d(64, 16, 3, 2)
+        self.bn4 = nn.BatchNorm2d(16)
+        self.fc = nn.Linear(1232, 2)
+
+    def forward(self, x):
+        x = self.bn1(torch.relu(self.con1(x)))
+        x = self.bn2(torch.relu(self.con2(x)))
+        x = self.bn3(torch.relu(self.con3(x)))
+        x = self.bn4(torch.relu(self.con4(x)))
+        x = torch.flatten(x, start_dim=1)
+        return self.fc(x)
+
+
 if __name__ == "__main__":
     state_size = 4
     action_size = 2
