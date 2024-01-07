@@ -10,9 +10,10 @@ from tqdm import tqdm
 from copy import deepcopy
 import matplotlib.pyplot as plt
 import torchvision.transforms.functional as TF
+
 parser = ArgumentParser()
 parser.add_argument("-train_render_mode", type=str, default="rgb_array")
-parser.add_argument("-demo_render_mode", type=str, default="rgb_array")
+parser.add_argument("-demo_render_mode", type=str, default="human")
 parser.add_argument("-eps", type=float, default=0.1)
 parser.add_argument("-clip_ratio", type=float, default=0.1)
 parser.add_argument("-naive_pg", type=int, default=0)
@@ -64,10 +65,12 @@ logger.info(f"running on: {device}")
 lr_scheduler = torch.optim.lr_scheduler.StepLR(
     optimizer, args.lr_step, gamma=args.lr_decay_rate)
 for e in tqdm(range(args.epochs)):
-    eps = torch.clip(torch.tensor(args.eps**(e/100+1), device=device), 0, 0.5)
+    eps = torch.clip(torch.tensor(args.eps ** (e / 100 + 1), device=device), 0, 0.5)
     baseline = generate_memeory(
         actor, cartpole, device, args.num_samples, args.sequence_model, args.image_state, eps=eps)
-    dataset = CartpoleDataset(actor.storage_capacity)
+    epi_len = [len(s[0]) for s in actor.storage]
+    logger.info(f"epoch:{e}; episode lengths: {epi_len}")
+    dataset = CartpoleDataset(actor.storage)
     dataloader = DataLoader(dataset, batch_size=args.batch_size,
                             shuffle=True, collate_fn=collate if args.sequence_model else linear_collate)
     k = 1 if args.naive_pg else 10

@@ -18,12 +18,15 @@ class CartpoleDataset(Dataset):
 
 
 @torch.no_grad()
-def sample_episode(agent, env, device, sequence_model=True, image_state=False, eps=0.1, greedy=False, save_to_agent_memory=True,):
+def sample_episode(agent, env, device, sequence_model=True, image_state=False, eps=0.1, greedy=False,
+                   save_to_agent_memory=True, ):
     agent.eval()
     state_dim = env.observation_space.shape[0]
     states = []
+    observations = []
     actions = []
     rewards = []
+    images = []
     observation, _ = env.reset()
     if image_state:
         assert env.render_mode == "rgb_array", f"env needs to be in rgb_array render mode"
@@ -62,30 +65,33 @@ def sample_episode(agent, env, device, sequence_model=True, image_state=False, e
             else:
                 a = torch.multinomial(probs, 1).item()
         actions.append(a)
-        observation, r, done, _, truncated = env.step(a)
         if image_state:
-            state = env.render()
+            image = env.render()
+            state = image
+            images.append(image)
         else:
             state = observation
+        observations.append(observation)
+        observation, r, done, _, truncated = env.step(a)
         rewards.append(r)
         if sum(rewards) > 500:
             break
-
-    states = torch.tensor(np.array(states), device=device)
+    assert len(states) == len(observations), f"states len ={len(states)} observations len== {len(observations)}"
+    observations = torch.tensor(np.array(observations), device=device)
     actions = torch.tensor(np.array(actions), device=device)
     rewards = torch.tensor(rewards, device=device)
-    if save_to_agent_memory:
-        agent.storage_capacity.append((states, actions, rewards))
-    return states, actions, rewards, sum(rewards)
+    if image_state:
+        return observations, actions, rewards, sum(rewards), images
+    else:
+        return observations, actions, rewards, sum(rewards),None
 
 
-def generate_memeory(agent, env, device, num_episodes, sequence_model=True, image_state=False, save=True, eps=0.1):
-    agent.storage_capacity.clear()
-    rewards = []
+def generate_memeory(agent, env, device, num_episodes, sequence_model=True, image_state=False, eps=0.1):
+    agent.storage.clear()
+    epi_rewards = []
     for i in range(num_episodes):
-        _, _, _, r = sample_episode(
-            agent, env, device, sequence_model=sequence_model, image_state=image_state, eps=eps, save_to_agent_memory=save)
-        rewards.append(r)
-    return sum(rewards)/len(rewards)
-
-
+        states, actions, rewards, r, images = sample_episode(
+            agent, env, device, sequence_model=sequence_model, image_state=image_state, eps=eps)
+        agent.storage.append((states, actions, rewards))
+        epi_rewards.append(r)
+    return sum(epi_rewards) / len(epi_rewards)

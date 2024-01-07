@@ -7,7 +7,7 @@ import numpy as np
 class Agent(nn.Module):
     def __init__(self, state_dim, num_actions, num_layers=2, max_len=100, interpolate_scale=4, num_heads=4, dim_forward=32, memory_length=100, batch_first=True) -> None:
         super().__init__()
-        self.storage_capacity = deque(maxlen=max_len)
+        self.storage = deque(maxlen=max_len)
         self.num_heads = num_heads
         self.memory_length = memory_length
         self.encoder_dim = interpolate_scale*state_dim
@@ -63,7 +63,7 @@ class Agent(nn.Module):
             states.append(state)
             env.render()
             total_returns += r
-            if total_returns > 500:
+            if total_returns >= 500:
                 break
         return total_returns
 
@@ -71,7 +71,7 @@ class Agent(nn.Module):
 class Net(nn.Module):
     def __init__(self, state_size, action_size, max_len=200):
         super().__init__()
-        self.storage_capacity = deque(maxlen=max_len)
+        self.storage = deque(maxlen=max_len)
         self.layers = nn.Sequential(
             nn.Linear(state_size, 16),
             nn.ReLU(),
@@ -112,14 +112,14 @@ class Net(nn.Module):
             state, r, done, _, truncated = env.step(action.item())
             env.render()
             total_returns += r
-            if total_returns > 500:
+            if total_returns >= 500:
                 break
         return total_returns
 
 
 class CNN(nn.Module):
     def __init__(self, maxlen) -> None:
-        self.storage_capacity = deque(maxlen=maxlen)
+        self.storage = deque(maxlen=maxlen)
         super().__init__()
         self.con1 = nn.Conv2d(3, 32, 7, 4)
         self.bn1 = nn.BatchNorm2d(32)
