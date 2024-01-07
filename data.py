@@ -76,14 +76,15 @@ def sample_episode(agent, env, device, sequence_model=True, image_state=False, e
         rewards.append(r)
         if sum(rewards) > 500:
             break
-    assert len(states) == len(observations), f"states len ={len(states)} observations len== {len(observations)}"
+    assert len(states) == len(
+        observations), f"states len ={len(states)} observations len== {len(observations)}"
     observations = torch.tensor(np.array(observations), device=device)
     actions = torch.tensor(np.array(actions), device=device)
     rewards = torch.tensor(rewards, device=device)
     if image_state:
         return observations, actions, rewards, sum(rewards), images
     else:
-        return observations, actions, rewards, sum(rewards),None
+        return observations, actions, rewards, sum(rewards), None
 
 
 def generate_memeory(agent, env, device, num_episodes, sequence_model=True, image_state=False, eps=0.1):
@@ -92,6 +93,6 @@ def generate_memeory(agent, env, device, num_episodes, sequence_model=True, imag
     for i in range(num_episodes):
         states, actions, rewards, r, images = sample_episode(
             agent, env, device, sequence_model=sequence_model, image_state=image_state, eps=eps)
-        agent.storage.append((states, actions, rewards))
+        agent.storage.append((states, actions, rewards, images))
         epi_rewards.append(r)
     return sum(epi_rewards) / len(epi_rewards)

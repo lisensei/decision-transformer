@@ -1,4 +1,5 @@
 from data import *
+import torchvision.transforms.functional as TF
 
 
 def train_linear(model, actor, batch, optimizer, device, naive_pg, baseline, clip_ratio):
@@ -65,10 +66,33 @@ def train_sequantial(model, actor, batch, optimizer, device, naive_pg, baseline,
         actor.eval()
 
 
-def process_image(image, resize_size=[300, 200]):
-    image = Image.fromarray(image)
-    image = image.resize(*resize_size)
-    return np.array(image)/255
+def resize_image(image, size=[300, 200]):
+    if isinstance(image, torch.Tensor):
+        image = TF.to_pil_image(image)
+    if isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+    image = image.resize(size)
+    return image
+
+
+def center_crop(position, image: Image.Image, box_size=[80, 80]):
+    _, box_width = box_size
+    width, _ = image.size
+    half_width = box_width//2
+    image_center = width//2
+    center = position/2.4*image_center+image_center
+    xmin, xmax = center-half_width, center+half_width
+    if xmin < 0:
+        xmin = 0
+        xmax = box_width
+    if xmax > width:
+        xmin = width-box_width
+        xmax = width
+    print(
+        f"image center: {image_center};x:{position},center={center};xmin={xmin};xmax={xmax}")
+    box = [xmin, 80, xmax, 160]
+    image = image.crop(box)
+    return image
 
 
 def compute_total_return(returns, gamma=1):
@@ -88,10 +112,10 @@ def collate(batch):
     reward_list = []
     total_returns = []
     max_len = -1
-    for _, actions, _ in batch:
+    for _, actions, _,_ in batch:
         episode_length = len(actions)
         max_len = episode_length if max_len < episode_length else max_len
-    for states, actions, rewards in batch:
+    for states, actions, rewards,_ in batch:
         state_length = len(states)
         step_returns = compute_total_return(rewards)
         if state_length < max_len:
@@ -116,7 +140,7 @@ def linear_collate(batch):
     action_list = []
     reward_list = []
     total_returns = []
-    for states, actions, rewards in batch:
+    for states, actions, rewards,_ in batch:
         step_returns = compute_total_return(rewards)
         states = torch.cat([states])
         actions = torch.cat([actions])

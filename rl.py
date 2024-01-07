@@ -21,10 +21,11 @@ parser.add_argument("-epochs", type=int, default=100)
 parser.add_argument("-batch_size", type=int, default=16)
 parser.add_argument("-learning_rate", type=float, default=1e-3)
 parser.add_argument("-num_samples", type=int, default=100)
-parser.add_argument("-sequence_model", type=int, default=1)
+parser.add_argument("-sequence_model", type=int, default=0)
 parser.add_argument("-lr_step", type=int, default=20)
 parser.add_argument("-lr_decay_rate", type=float, default=0.5)
 parser.add_argument("-image_state", type=int, default=0)
+parser.add_argument("-k", type=int, default=10)
 args = parser.parse_args()
 
 run_time = datetime.now().isoformat(timespec="seconds")
@@ -65,7 +66,8 @@ logger.info(f"running on: {device}")
 lr_scheduler = torch.optim.lr_scheduler.StepLR(
     optimizer, args.lr_step, gamma=args.lr_decay_rate)
 for e in tqdm(range(args.epochs)):
-    eps = torch.clip(torch.tensor(args.eps ** (e / 100 + 1), device=device), 0, 0.5)
+    eps = torch.clip(torch.tensor(
+        args.eps ** (e / 100 + 1), device=device), 0, 0.5)
     baseline = generate_memeory(
         actor, cartpole, device, args.num_samples, args.sequence_model, args.image_state, eps=eps)
     epi_len = [len(s[0]) for s in actor.storage]
@@ -73,7 +75,7 @@ for e in tqdm(range(args.epochs)):
     dataset = CartpoleDataset(actor.storage)
     dataloader = DataLoader(dataset, batch_size=args.batch_size,
                             shuffle=True, collate_fn=collate if args.sequence_model else linear_collate)
-    k = 1 if args.naive_pg else 10
+    k = 1 if args.naive_pg else args.k
     for u in range(k):
         for i, batch in enumerate(dataloader):
             '''
