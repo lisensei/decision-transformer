@@ -3,6 +3,7 @@ import torch.nn as nn
 from collections import deque
 import numpy as np
 from data import center_crop
+from PIL import Image
 
 
 class Agent(nn.Module):
@@ -45,6 +46,11 @@ class Agent(nn.Module):
     def run(self, env, device, greedy=True):
         self.eval()
         state, _ = env.reset()
+        is_array = env.render_mode == "rgb_array"
+        image = env.render()
+        images = []
+        if is_array:
+            images.append(Image.fromarray(image))
         done = False
         truncated = False
         states = [state]
@@ -62,11 +68,13 @@ class Agent(nn.Module):
                 action = env.action_space.sample()
             state, r, done, _, truncated = env.step(action)
             states.append(state)
+            if is_array:
+                images.append(Image.fromarray(env.render()))
             env.render()
             total_returns += r
             if total_returns >= 500:
                 break
-        return total_returns
+        return total_returns, images
 
 
 class Net(nn.Module):
@@ -99,6 +107,11 @@ class Net(nn.Module):
     def run(self, env, device, greedy=True):
         self.eval()
         state, _ = env.reset()
+        image = env.render()
+        is_array = env.render_mode == "rgb_array"
+        images = []
+        if is_array:
+            images.append(Image.fromarray(image))
         done = False
         truncated = False
         total_returns = 0
@@ -111,11 +124,13 @@ class Net(nn.Module):
             else:
                 action = torch.multinomial(torch.softmax(out, dim=1), 1)
             state, r, done, _, truncated = env.step(action.item())
-            env.render()
+            image = env.render()
+            if is_array:
+                images.append(image)
             total_returns += r
             if total_returns >= 500:
                 break
-        return total_returns
+        return total_returns, images
 
 
 class CNN(nn.Module):

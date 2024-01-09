@@ -19,9 +19,7 @@ class CartpoleDataset(Dataset):
 
 
 @torch.no_grad()
-def sample_episode(agent, env, device, sequence_model=True, image_state=False, eps=0.1, greedy=False,
-                   save_to_agent_memory=True, ):
-    
+def sample_episode(agent, env, device, sequence_model=True, image_state=False,  greedy=False, eps=0.1):
     '''
     returns:
     observation: Tensor
@@ -61,10 +59,13 @@ def sample_episode(agent, env, device, sequence_model=True, image_state=False, e
                 1, -1, state_dim)
         output = agent(x)
         if greedy:
-            if not sequence_model:
-                a = torch.argmax(output, 1).item()
+            if np.random.rand() > eps:
+                if not sequence_model:
+                    a = torch.argmax(output, 1).item()
+                else:
+                    a = torch.argmax(output[0, -1]).item()
             else:
-                a = torch.argmax(output[0, -1]).item()
+                a = env.action_space.sample()
         else:
             if not sequence_model:
                 probs = torch.softmax(output, 1)
@@ -99,12 +100,12 @@ def sample_episode(agent, env, device, sequence_model=True, image_state=False, e
         return observations, actions, rewards, sum(rewards), None
 
 
-def generate_memeory(agent, env, device, num_episodes, sequence_model=True, image_state=False, eps=0.1):
+def generate_memeory(agent, env, device, num_episodes, sequence_model=True, image_state=False, greedy=True, eps=0.1):
     agent.storage.clear()
     epi_rewards = []
     for i in range(num_episodes):
         states, actions, rewards, r, images = sample_episode(
-            agent, env, device, sequence_model=sequence_model, image_state=image_state, eps=eps)
+            agent, env, device, sequence_model=sequence_model, image_state=image_state, greedy=greedy, eps=eps)
         agent.storage.append((states, actions, rewards, images))
         epi_rewards.append(r)
     return sum(epi_rewards) / len(epi_rewards)

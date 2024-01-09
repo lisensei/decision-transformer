@@ -129,15 +129,18 @@ def linear_collate(batch):
         states = torch.cat([states])
         actions = torch.cat([actions])
         rewards = torch.sum(rewards).expand(states.size(0))
-        images = torch.tensor(np.array(images)).permute(0, 3, 1, 2).div(255)
+        if images !=None:
+            images = torch.tensor(np.array(images)).permute(0, 3, 1, 2).div(255)
         step_returns = torch.cat([step_returns])
         state_list.append(states)
         action_list.append(actions)
         reward_list.append(rewards)
         total_returns.append(step_returns)
         image_list.append(images)
-    return torch.cat(state_list), torch.cat(action_list), torch.cat(reward_list).unsqueeze(1), torch.cat(total_returns).unsqueeze(1), torch.cat(image_list)
-
+    if images!=None:
+        return torch.cat(state_list), torch.cat(action_list), torch.cat(reward_list).unsqueeze(1), torch.cat(total_returns).unsqueeze(1), torch.cat(image_list)
+    else:
+        return torch.cat(state_list), torch.cat(action_list), torch.cat(reward_list).unsqueeze(1), torch.cat(total_returns).unsqueeze(1),None
 
 def test_padding(model, env, device):
     s1 = sample_episode(model, env, device)

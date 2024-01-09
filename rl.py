@@ -15,6 +15,7 @@ parser = ArgumentParser()
 parser.add_argument("-train_render_mode", type=str, default="rgb_array")
 parser.add_argument("-demo_render_mode", type=str, default="rgb_array")
 parser.add_argument("-eps", type=float, default=0.1)
+parser.add_argument("-greedy", type=int, default=0)
 parser.add_argument("-clip_ratio", type=float, default=0.1)
 parser.add_argument("-naive_pg", type=int, default=0)
 parser.add_argument("-epochs", type=int, default=100)
@@ -67,9 +68,9 @@ lr_scheduler = torch.optim.lr_scheduler.StepLR(
     optimizer, args.lr_step, gamma=args.lr_decay_rate)
 for e in tqdm(range(args.epochs)):
     eps = torch.clip(torch.tensor(
-        args.eps ** (e / 100 + 1), device=device), 0, 0.5)
+        args.eps ** (e / 100 + 1), device=device), 0, 0.25)
     baseline = generate_memeory(
-        actor, cartpole, device, args.num_samples, args.sequence_model, args.image_state, eps=eps)
+        actor, cartpole, device, args.num_samples, args.sequence_model, args.image_state, eps=eps, greedy=args.greedy)
     epi_len = [len(s[0]) for s in actor.storage]
     logger.info(f"epoch:{e}; episode lengths: {epi_len}")
     dataset = CartpoleDataset(actor.storage)
@@ -92,11 +93,9 @@ for e in tqdm(range(args.epochs)):
                 train_linear(model, actor, batch, optimizer,
                              device, args.naive_pg, baseline, args.clip_ratio, args.image_state)
     lr_scheduler.step()
-    if args.image_state:
-        tr, images = model.run(demo_env, device)
+    tr, images = model.run(demo_env, device)
+    if len(images)!=0:
         imageio.mimsave(f"{log_root}/test_run_{e}.gif", images)
-    else:
-        tr = model.run(demo_env, device)
     logger.info(
         f"epoch: [{e}]; learning_rate: {lr_scheduler.get_last_lr()} previous baseline: [{baseline}];  total return: [{tr}]")
     actor.load_state_dict(model.state_dict())
