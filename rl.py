@@ -21,10 +21,10 @@ parser.add_argument("-epochs", type=int, default=100)
 parser.add_argument("-batch_size", type=int, default=16)
 parser.add_argument("-learning_rate", type=float, default=1e-3)
 parser.add_argument("-num_samples", type=int, default=100)
-parser.add_argument("-sequence_model", type=int, default=0)
+parser.add_argument("-sequence_model", type=int, default=1)
 parser.add_argument("-lr_step", type=int, default=20)
 parser.add_argument("-lr_decay_rate", type=float, default=0.5)
-parser.add_argument("-image_state", type=int, default=1)
+parser.add_argument("-image_state", type=int, default=0)
 parser.add_argument("-k", type=int, default=10)
 args = parser.parse_args()
 
@@ -92,9 +92,12 @@ for e in tqdm(range(args.epochs)):
                 train_linear(model, actor, batch, optimizer,
                              device, args.naive_pg, baseline, args.clip_ratio, args.image_state)
     lr_scheduler.step()
-    tr, images = model.run(demo_env, device)
+    if args.image_state:
+        tr, images = model.run(demo_env, device)
+        imageio.mimsave(f"{log_root}/test_run_{e}.gif", images)
+    else:
+        tr = model.run(demo_env, device)
     logger.info(
         f"epoch: [{e}]; learning_rate: {lr_scheduler.get_last_lr()} previous baseline: [{baseline}];  total return: [{tr}]")
-    imageio.mimsave(f"{log_root}/test_run_{e}.gif", images)
     actor.load_state_dict(model.state_dict())
     actor.eval()
