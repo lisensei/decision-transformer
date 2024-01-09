@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from collections import deque
 import numpy as np
+from data import center_crop
 
 
 class Agent(nn.Module):
@@ -127,9 +128,9 @@ class CNN(nn.Module):
         self.bn2 = nn.BatchNorm2d(32)
         self.con3 = nn.Conv2d(32, 64, 3, 2)
         self.bn3 = nn.BatchNorm2d(64)
-        self.con4 = nn.Conv2d(64, 16, 3, 2)
+        self.con4 = nn.Conv2d(64, 16, 3, 1)
         self.bn4 = nn.BatchNorm2d(16)
-        self.fc = nn.Linear(1232, 2)
+        self.fc = nn.Linear(144, 2)
 
     def forward(self, x):
         x = self.bn1(torch.relu(self.con1(x)))
@@ -138,6 +139,32 @@ class CNN(nn.Module):
         x = self.bn4(torch.relu(self.con4(x)))
         x = torch.flatten(x, start_dim=1)
         return self.fc(x)
+
+    @torch.no_grad()
+    def run(self, env, device, greedy=True):
+        self.eval()
+        assert env.render_mode == "rgb_array", "environment needs to be in rgb_array mode"
+        ob, _ = env.reset()
+        state = env.render()
+        states = []
+        done = False
+        truncated = False
+        rewards = 0
+        while not done and not truncated:
+            states.append(state)
+            out = self.forward(torch.tensor(
+                np.array(center_crop(ob[0], states[-1])), device=device).permute(2, 0, 1).div(255).unsqueeze(0))
+            if greedy:
+                action = torch.argmax(out).item()
+            else:
+                probs = torch.softmax(out, 0)
+                action = torch.multinomial(probs, 1).item()
+            ob, r, done, _, truncated = env.step(action)
+            state = env.render()
+            rewards += r
+            if rewards >= 500:
+                break
+        return rewards, states
 
 
 if __name__ == "__main__":

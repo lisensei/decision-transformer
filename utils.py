@@ -1,11 +1,14 @@
 from data import *
 import torchvision.transforms.functional as TF
+import imageio
 
 
-def train_linear(model, actor, batch, optimizer, device, naive_pg, baseline, clip_ratio):
+def train_linear(model, actor, batch, optimizer, device, naive_pg, baseline, clip_ratio, image_state=False):
     model.train()
     actor.eval()
-    states, actions, rewards, returns = batch
+    states, actions, rewards, returns, images = batch
+    if image_state:
+        states = images
     states = states.to(device)
     actions = actions.to(device).to(torch.int64)
     rewards = rewards.to(device)
@@ -75,26 +78,6 @@ def resize_image(image, size=[300, 200]):
     return image
 
 
-def center_crop(position, image: Image.Image, box_size=[80, 80]):
-    _, box_width = box_size
-    width, _ = image.size
-    half_width = box_width//2
-    image_center = width//2
-    center = position/2.4*image_center+image_center
-    xmin, xmax = center-half_width, center+half_width
-    if xmin < 0:
-        xmin = 0
-        xmax = box_width
-    if xmax > width:
-        xmin = width-box_width
-        xmax = width
-    print(
-        f"image center: {image_center};x:{position},center={center};xmin={xmin};xmax={xmax}")
-    box = [xmin, 80, xmax, 160]
-    image = image.crop(box)
-    return image
-
-
 def compute_total_return(returns, gamma=1):
     episodo_length = len(returns)
     step_returns = []
@@ -112,10 +95,10 @@ def collate(batch):
     reward_list = []
     total_returns = []
     max_len = -1
-    for _, actions, _,_ in batch:
+    for _, actions, _, _ in batch:
         episode_length = len(actions)
         max_len = episode_length if max_len < episode_length else max_len
-    for states, actions, rewards,_ in batch:
+    for states, actions, rewards, _ in batch:
         state_length = len(states)
         step_returns = compute_total_return(rewards)
         if state_length < max_len:
@@ -140,17 +123,20 @@ def linear_collate(batch):
     action_list = []
     reward_list = []
     total_returns = []
-    for states, actions, rewards,_ in batch:
+    image_list = []
+    for states, actions, rewards, images in batch:
         step_returns = compute_total_return(rewards)
         states = torch.cat([states])
         actions = torch.cat([actions])
         rewards = torch.sum(rewards).expand(states.size(0))
+        images = torch.tensor(np.array(images)).permute(0, 3, 1, 2).div(255)
         step_returns = torch.cat([step_returns])
         state_list.append(states)
         action_list.append(actions)
         reward_list.append(rewards)
         total_returns.append(step_returns)
-    return torch.cat(state_list), torch.cat(action_list), torch.cat(reward_list).unsqueeze(1), torch.cat(total_returns).unsqueeze(1)
+        image_list.append(images)
+    return torch.cat(state_list), torch.cat(action_list), torch.cat(reward_list).unsqueeze(1), torch.cat(total_returns).unsqueeze(1), torch.cat(image_list)
 
 
 def test_padding(model, env, device):

@@ -13,7 +13,7 @@ import torchvision.transforms.functional as TF
 
 parser = ArgumentParser()
 parser.add_argument("-train_render_mode", type=str, default="rgb_array")
-parser.add_argument("-demo_render_mode", type=str, default="human")
+parser.add_argument("-demo_render_mode", type=str, default="rgb_array")
 parser.add_argument("-eps", type=float, default=0.1)
 parser.add_argument("-clip_ratio", type=float, default=0.1)
 parser.add_argument("-naive_pg", type=int, default=0)
@@ -24,7 +24,7 @@ parser.add_argument("-num_samples", type=int, default=100)
 parser.add_argument("-sequence_model", type=int, default=0)
 parser.add_argument("-lr_step", type=int, default=20)
 parser.add_argument("-lr_decay_rate", type=float, default=0.5)
-parser.add_argument("-image_state", type=int, default=0)
+parser.add_argument("-image_state", type=int, default=1)
 parser.add_argument("-k", type=int, default=10)
 args = parser.parse_args()
 
@@ -90,10 +90,11 @@ for e in tqdm(range(args.epochs)):
                                  device, args.naive_pg, baseline, args.clip_ratio)
             else:
                 train_linear(model, actor, batch, optimizer,
-                             device, args.naive_pg, baseline, args.clip_ratio)
+                             device, args.naive_pg, baseline, args.clip_ratio, args.image_state)
     lr_scheduler.step()
-    tr = model.run(demo_env, device)
+    tr, images = model.run(demo_env, device)
     logger.info(
         f"epoch: [{e}]; learning_rate: {lr_scheduler.get_last_lr()} previous baseline: [{baseline}];  total return: [{tr}]")
+    imageio.mimsave(f"{log_root}/test_run_{e}.gif", images)
     actor.load_state_dict(model.state_dict())
     actor.eval()
